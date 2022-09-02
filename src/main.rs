@@ -1,4 +1,4 @@
-use std::{fs::File, io::Read, io::Seek, io::SeekFrom, io::Write};
+use std::{fs::{OpenOptions, File}, io::{Read, Seek, SeekFrom, Write}};
 
 fn main() {
     let source = "src/source.bin";
@@ -45,14 +45,19 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8)> {
 }
 
 fn apply(diff: Vec<(u64, u8)>, file1: &str) {
-    let mut file = File::create(file1).expect("Unable to read file");
+    let mut file = OpenOptions::new()
+                            .read(true)     
+                            .write(true)
+                            .open(file1)
+                            .expect("Unable to open file");
+                            
     let mut buffer = [0; 1];
 
     for (i, c) in diff {
         file.seek(SeekFrom::Start(i as u64)).expect("Unable to seek file");
         file.read(&mut buffer).expect("Unable to read file");
         if buffer[0] != c {
-            file.write_all(&[c as u8]).expect("Unable to write to file");
+            file.write(&[c as u8]).expect("Unable to write to file");
         }
     }
 }
