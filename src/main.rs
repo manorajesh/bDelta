@@ -34,7 +34,7 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8)> {
         i += 1;
     }
 
-    if new_len > source_len {
+    if (new_len - diff.len() as u64) > source_len {
         while i < new_len.into() {
             new.read(&mut buffer2).expect("Unable to read file");
             diff.push((i, buffer2[0]));
@@ -44,20 +44,36 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8)> {
     diff
 }
 
-fn apply(diff: Vec<(u64, u8)>, file1: &str) {
-    let mut file = OpenOptions::new()
-                            .read(true)     
-                            .write(true)
-                            .open(file1)
-                            .expect("Unable to open file");
-                            
-    let mut buffer = [0; 1];
+fn apply(diff: Vec<(u64, u8)>, target: &str) {
+    let buffer_file = String::from(target) + ".buffer";
+    let mut diff = diff;
 
-    for (i, c) in diff {
-        file.seek(SeekFrom::Start(i as u64)).expect("Unable to seek file");
-        file.read(&mut buffer).expect("Unable to read file");
-        if buffer[0] != c {
-            file.write(&[c as u8]).expect("Unable to write to file");
+    // write to buffer file
+    let mut bfile = OpenOptions::new()
+                            .read(true)
+                            .write(true)
+                            .create(true)
+                            .open(buffer_file)
+                            .expect("Unable to open file");
+
+    // target file to read from
+    let mut tfile = OpenOptions::new()
+                            .read(true)
+                            .open(target)
+                            .expect("Unable to open file");
+
+    let mut buffer = [0; 1];
+    let tfile_len = tfile.metadata().unwrap().len() + diff.len() as u64;
+
+    let mut i: u64 = 0;
+    while i < tfile_len {
+        if diff[0].0 == i {
+            bfile.write(&[diff[0].1]).expect("Unable to write to file");
+            diff.remove(0);
+        } else {
+            tfile.read(&mut buffer).expect("Unable to read file");
+            bfile.write(&buffer).expect("Unable to write to file");
         }
+        i += 1;
     }
 }
