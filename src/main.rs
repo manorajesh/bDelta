@@ -1,4 +1,12 @@
-use std::{fs::{OpenOptions, File}, io::{Read, Seek, SeekFrom, Write}};
+use std::{fs::{OpenOptions, File}, io::{Read, Write}};
+
+/* 
+ First, identify and record the differing bytes between the source and
+ the new file
+ Then, create a new temporary file and copy the source file with the 
+ differing bytes at the correct locations as well.
+ Finally, rename the temporary file to the new file.
+ */
 
 fn main() {
     let source = "src/source.bin";
@@ -7,7 +15,7 @@ fn main() {
     let diff = diff(source, new);
     println!("{:?}", diff);
 
-    apply(diff, source)
+    apply(diff, source, true);
 }
 
 fn diff(file1: &str, file2: &str) -> Vec<(u64, u8)> {
@@ -44,16 +52,16 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8)> {
     diff
 }
 
-fn apply(diff: Vec<(u64, u8)>, target: &str) {
+fn apply(diff_bytes: Vec<(u64, u8)>, target: &str, verify: bool) {
     let buffer_file = String::from(target) + ".buffer";
-    let mut diff = diff;
+    let mut diff_bytes = diff_bytes;
 
     // write to buffer file
     let mut bfile = OpenOptions::new()
                             .read(true)
                             .write(true)
                             .create(true)
-                            .open(buffer_file)
+                            .open(&buffer_file)
                             .expect("Unable to open file");
 
     // target file to read from
@@ -63,17 +71,27 @@ fn apply(diff: Vec<(u64, u8)>, target: &str) {
                             .expect("Unable to open file");
 
     let mut buffer = [0; 1];
-    let tfile_len = tfile.metadata().unwrap().len() + diff.len() as u64;
+    let tfile_len = tfile.metadata().unwrap().len() + diff_bytes.len() as u64;
 
     let mut i: u64 = 0;
     while i < tfile_len {
-        if diff[0].0 == i {
-            bfile.write(&[diff[0].1]).expect("Unable to write to file");
-            diff.remove(0);
+        if diff_bytes[0].0 == i {
+            bfile.write(&[diff_bytes[0].1]).expect("Unable to write to file");
+            diff_bytes.remove(0);
+            i += 1;
         } else {
             tfile.read(&mut buffer).expect("Unable to read file");
             bfile.write(&buffer).expect("Unable to write to file");
         }
         i += 1;
+    }
+
+    if verify {
+        if diff(&buffer_file[..], target) == Vec::new() {
+            std::fs::remove_file(target).expect("Unable to remove file");
+            std::fs::rename(buffer_file, target).expect("Unable to rename file");
+        } else {
+            println!("Verification failed");
+        }
     }
 }
