@@ -1,4 +1,4 @@
-use std::{fs::{OpenOptions, File}, io::{self, Read, Write}};
+use std::{fs::{OpenOptions, File}, io::{Read, Write}};
 
 /* 
  First, identify and record the differing bytes between the source and
@@ -15,7 +15,7 @@ fn main() {
     let diff = diff(source, new);
     println!("{:?}", diff);
 
-    apply(diff, source, false);
+    apply(diff, source, true);
 }
 
 fn diff(file1: &str, file2: &str) -> Vec<(u64, u8)> {
@@ -82,8 +82,8 @@ fn apply(diff_bytes: Vec<(u64, u8)>, target: &str, verify: bool) {
         } else {
             tfile.read(&mut buffer).expect("Unable to read file");
             bfile.write(&buffer).expect("Unable to write to file");
-            i += 1;
         }
+        i += 1;
     }
 
     if verify {
@@ -93,32 +93,5 @@ fn apply(diff_bytes: Vec<(u64, u8)>, target: &str, verify: bool) {
         } else {
             println!("Verification failed");
         }
-    } else {
-        let mut usr_input = String::new();
-
-        loop {
-            println!("Verification is disabled. Do you want to apply buffer? (y/n)");
-
-            io::stdin()
-                .read_line(&mut usr_input)
-                .expect("Unable to read input");
-
-            match usr_input.trim() {
-                "y" => {
-                    std::fs::remove_file(target).expect("Unable to remove file");
-                    std::fs::rename(buffer_file, target).expect("Unable to rename file");
-                    break;
-                },
-                "n" => {
-                    std::fs::remove_file(buffer_file).expect("Unable to remove file");
-                    break;
-                },
-                _ => {
-                    println!("Invalid input");
-                    usr_input.clear();
-                }
-            }
-        }
-
     }
 }
