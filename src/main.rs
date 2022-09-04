@@ -31,7 +31,7 @@ enum SubCommands {
         #[clap(short, long)]
         request: bool,
         
-        #[clap(short, long = "delete-diff", action)]
+        #[clap(short, long = "delete-diff", action, default_value = "true")]
         delete: bool,
     },
     /// Generate a binary patch from a source and new file

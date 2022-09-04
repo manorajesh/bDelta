@@ -1,5 +1,5 @@
 [package]
-name = "delta"
+name = "bdel"
 version = "0.1.0"
 edition = "2021"
 description = "A utility that generates a binary delta of two files and allows you to apply it on the source."
