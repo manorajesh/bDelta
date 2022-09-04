@@ -86,7 +86,7 @@ fn main() {
             };
 
             let new = if Path::new(&new).exists() {&new[..]} else {
-                eprintln!("New file does not exist");
+                eprintln!("Diff file does not exist");
                 exit(1);
             };
 
@@ -111,34 +111,38 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
     println!("Finding diffs...");
     
     let mut i: u64 = 0;
+    let mut j: usize = 0;
     loop {
         if new.read(&mut buffer2).expect("Unable to read file") == 0 {break} // break when EOF
         if source.read(&mut buffer1).expect("Unable to read file") == 0 {break}
 
         if buffer1 != buffer2 {
-            while i < buffer2.len() as u64 {
-                if buffer1[i as usize] != buffer2[i as usize] {
-                    diff.push((i, buffer2[i as usize], false));
+            while i < CHUNK_SIZE as u64 && j < CHUNK_SIZE as usize {
+                if buffer1[i as usize] != buffer2[j] {
+                    diff.push((j as u64, buffer2[j], false));
+                    j += 1;
+                } else {
+                    i += 1;
+                    j += 1;
                 }
-                i += 1;
             }
-        }
-        i += CHUNK_SIZE;
-    }
-    if new_len > source_len {
-        while i < new_len {
-            if new.read(&mut buffer2).expect("Unable to read file") == 0 {break} // break when EOF
-            for (j, byte) in buffer2.iter().enumerate() {
-                diff.push((i + j as u64, *byte, true));
-            }
+        } else {
             i += CHUNK_SIZE;
+        }
+    }
+    
+    if new_len > source_len {
+        while j < CHUNK_SIZE as usize {
+            diff.push((i + j as u64, buffer2[j], false));
+            i += 1;
+            j += 1;
         }
     } else if new_len < source_len {
         diff.push((new_len, 0, true));
     }
 
     if diff != Vec::new() { // If there are no differences, return an empty vector
-        diff.insert(0, (i, 0, false)); // Add length of new file to the beginning of the diff
+        diff.insert(0, (new_len, 0, false)); // Add the length of the new file to the beginning of the vector
     }
     diff
 }
@@ -172,6 +176,7 @@ fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool) {
 
     println!("Applying patch...");
     
+    diff_bytes.push((0, 0, true)); // Add a dummy value to the end of the vector to prevent out of bounds errors
     let mut i: u64 = 0;
     while i < max_character {
         if diff_bytes[0].2 && i == max_character {
@@ -191,6 +196,7 @@ fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool) {
             stdout().flush().unwrap();
         }
     }
+    println!("\r100.0%");
 
     if request {
         let mut usr_input = String::new();
