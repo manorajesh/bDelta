@@ -106,6 +106,9 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
 
     let source_len = source.metadata().unwrap().len();
     let new_len = new.metadata().unwrap().len();
+
+    let max_character = if source_len < CHUNK_SIZE {source_len} else {CHUNK_SIZE};
+
     let mut diff = Vec::new();
 
     println!("Finding diffs...");
@@ -117,7 +120,7 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
         if source.read(&mut buffer1).expect("Unable to read file") == 0 {break}
 
         if buffer1 != buffer2 {
-            while i < CHUNK_SIZE as u64 && j < CHUNK_SIZE as usize {
+            while i < max_character as u64 && j < max_character as usize {
                 if buffer1[i as usize] != buffer2[j] {
                     diff.push((j as u64, buffer2[j], false));
                     j += 1;
@@ -132,7 +135,7 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
     }
     
     if new_len > source_len {
-        while j < CHUNK_SIZE as usize {
+        while j < max_character as usize {
             diff.push((i + j as u64, buffer2[j], false));
             i += 1;
             j += 1;
@@ -176,6 +179,7 @@ fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool) {
 
     println!("Applying patch...");
     
+    diff_bytes.push((0, 0, true)); // Add a dummy value to the end of the vector to prevent out of bounds error
     let mut i: u64 = 0;
     while i < max_character {
         if diff_bytes[0].2 && i == max_character {
