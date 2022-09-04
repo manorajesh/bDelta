@@ -176,7 +176,6 @@ fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool) {
 
     println!("Applying patch...");
     
-    diff_bytes.push((0, 0, true)); // Add a dummy value to the end of the vector to prevent out of bounds errors
     let mut i: u64 = 0;
     while i < max_character {
         if diff_bytes[0].2 && i == max_character {
