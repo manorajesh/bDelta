@@ -99,8 +99,10 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
     let mut source = File::open(file1).expect("Unable to read file");
     let mut new = File::open(file2).expect("Unable to read file");
 
-    let mut buffer1 = [0; 256];
-    let mut buffer2 = [0; 256];
+    const CHUNK_SIZE: u64 = 1024;
+
+    let mut buffer1 = [0; CHUNK_SIZE as usize];
+    let mut buffer2 = [0; CHUNK_SIZE as usize];
 
     let source_len = source.metadata().unwrap().len();
     let new_len = new.metadata().unwrap().len();
@@ -114,19 +116,22 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
         if source.read(&mut buffer1).expect("Unable to read file") == 0 {break}
 
         if buffer1 != buffer2 {
-            for (j, (byte1, byte2)) in buffer1.iter().zip(buffer2.iter()).enumerate() {
-                if byte1 != byte2 {
-                    diff.push((i + j as u64, *byte2, false));
+            while i < buffer2.len() as u64 {
+                if buffer1[i as usize] != buffer2[i as usize] {
+                    diff.push((i, buffer2[i as usize], false));
                 }
+                i += 1;
             }
         }
-        i += 128;
+        i += CHUNK_SIZE;
     }
     if new_len > source_len {
-        while i < new_len.into() {
-            diff.push((i, buffer2[0], false));
-            new.read(&mut buffer2).expect("Unable to read file"); // already read the byte in loop
-            i += 1;
+        while i < new_len {
+            if new.read(&mut buffer2).expect("Unable to read file") == 0 {break} // break when EOF
+            for (j, byte) in buffer2.iter().enumerate() {
+                diff.push((i + j as u64, *byte, true));
+            }
+            i += CHUNK_SIZE;
         }
     } else if new_len < source_len {
         diff.push((new_len, 0, true));
