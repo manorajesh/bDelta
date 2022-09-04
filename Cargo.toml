@@ -8,7 +8,7 @@ repository = "https://github.com/manorajesh/bDelta"
 license-file = "LICENSE"
 keywords = ["binary", "delta", "patching"]
 categories = ["command-line-utilities"]
-exclude = ["src/*.bin"]
+exclude = ["src/*.bin", ".vscode"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
