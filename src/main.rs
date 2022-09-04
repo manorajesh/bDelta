@@ -15,10 +15,10 @@ fn main() {
     let diff = diff(source, new);
     println!("{:?}", diff);
 
-    apply(diff, source, false);
+    apply(diff, source, true, new);
 }
 
-fn diff(file1: &str, file2: &str) -> Vec<(u64, u8)> {
+fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
     let mut source = File::open(file1).expect("Unable to read file");
     let mut new = File::open(file2).expect("Unable to read file");
 
@@ -30,13 +30,13 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8)> {
     let mut diff = Vec::new();
     
     let mut i: u64 = 0;
-    while i < source_len.into() {
-        source.read(&mut buffer1).expect("Unable to read file");
-        new.read(&mut buffer2).expect("Unable to read file");
+    loop {
+        if new.read(&mut buffer2).expect("Unable to read file") == 0 {break} // break when EOF
+        if source.read(&mut buffer1).expect("Unable to read file") == 0 {break}
 
         while buffer1 != buffer2 {
-            diff.push((i, buffer2[0]));
-            new.read(&mut buffer2).expect("Unable to read file");
+            diff.push((i, buffer2[0], false));
+            if new.read(&mut buffer2).expect("Unable to read file") == 0 {break} // break when EOF
             i += 1
         }
         i += 1;
@@ -44,15 +44,29 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8)> {
 
     if (new_len - diff.len() as u64) > source_len {
         while i < new_len.into() {
-            new.read(&mut buffer2).expect("Unable to read file");
-            diff.push((i, buffer2[0]));
+            diff.push((i, buffer2[0], false));
+            new.read(&mut buffer2).expect("Unable to read file"); // already read the byte in loop
             i += 1;
         }
+    } else if new_len < source_len {
+        diff.push((new_len, 0, true));
+    }
+
+    if diff != Vec::new() { // If there are no differences, return an empty vector
+        diff.insert(0, (i, 0, false)); // Add length of new file to the beginning of the diff
     }
     diff
 }
 
-fn apply(diff_bytes: Vec<(u64, u8)>, target: &str, verify: bool) {
+fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, verify: bool, new: &str) {
+    if diff_bytes == Vec::new() {
+        println!("No differences found");
+        return;
+    }
+    if !verify {
+        drop(new); // Drop the new file if automatic verification is disabled
+    }
+
     let buffer_file = String::from(target) + ".buffer";
     let mut diff_bytes = diff_bytes;
 
@@ -71,11 +85,14 @@ fn apply(diff_bytes: Vec<(u64, u8)>, target: &str, verify: bool) {
                             .expect("Unable to open file");
 
     let mut buffer = [0; 1];
-    let tfile_len = tfile.metadata().unwrap().len() + diff_bytes.len() as u64;
-
+    let max_character = diff_bytes[0].0;
+    diff_bytes.remove(0);
+    
     let mut i: u64 = 0;
-    while i < tfile_len {
-        if diff_bytes[0].0 == i {
+    while i < max_character {
+        if diff_bytes[0].2 && i == max_character {
+            break
+        } else if diff_bytes[0].0 == i {
             bfile.write(&[diff_bytes[0].1]).expect("Unable to write to file");
             diff_bytes.remove(0);
             i += 1;
@@ -87,11 +104,14 @@ fn apply(diff_bytes: Vec<(u64, u8)>, target: &str, verify: bool) {
     }
 
     if verify {
-        if diff(&buffer_file[..], target) == Vec::new() {
+        if diff(&buffer_file[..], new) == Vec::new() {
             std::fs::remove_file(target).expect("Unable to remove file");
             std::fs::rename(buffer_file, target).expect("Unable to rename file");
+            println!("Verification successful");
+            println!("Successfully applied patch at {}", target);
         } else {
-            println!("Verification failed");
+            println!("Verification failed, removing buffer file");
+            //std::fs::remove_file(&buffer_file).expect("Unable to remove file");
         }
     } else {
         let mut usr_input = String::new();
@@ -107,10 +127,12 @@ fn apply(diff_bytes: Vec<(u64, u8)>, target: &str, verify: bool) {
                 "y" => {
                     std::fs::remove_file(target).expect("Unable to remove file");
                     std::fs::rename(buffer_file, target).expect("Unable to rename file");
+                    println!("{} file updated", target);
                     break;
                 },
                 "n" => {
-                    std::fs::remove_file(buffer_file).expect("Unable to remove file");
+                    std::fs::remove_file(&buffer_file).expect("Unable to remove file");
+                    println!("{} file removed", buffer_file);
                     break;
                 },
                 _ => {
