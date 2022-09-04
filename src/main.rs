@@ -99,8 +99,8 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
     let mut source = File::open(file1).expect("Unable to read file");
     let mut new = File::open(file2).expect("Unable to read file");
 
-    let mut buffer1 = [0; 1];
-    let mut buffer2 = [0; 1];
+    let mut buffer1 = [0; 256];
+    let mut buffer2 = [0; 256];
 
     let source_len = source.metadata().unwrap().len();
     let new_len = new.metadata().unwrap().len();
@@ -113,12 +113,14 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
         if new.read(&mut buffer2).expect("Unable to read file") == 0 {break} // break when EOF
         if source.read(&mut buffer1).expect("Unable to read file") == 0 {break}
 
-        while buffer1 != buffer2 {
-            diff.push((i, buffer2[0], false));
-            if new.read(&mut buffer2).expect("Unable to read file") == 0 {break} // break when EOF
-            i += 1
+        if buffer1 != buffer2 {
+            for (j, (byte1, byte2)) in buffer1.iter().zip(buffer2.iter()).enumerate() {
+                if byte1 != byte2 {
+                    diff.push((i + j as u64, *byte2, false));
+                }
+            }
         }
-        i += 1;
+        i += 128;
     }
     if new_len > source_len {
         while i < new_len.into() {
@@ -180,7 +182,7 @@ fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool) {
         }
 
         if i % 100 == 0 {
-            print!("\r{:.2}%", (i as f64 / max_character as f64) * 100.0);
+            print!("\r{:.1}%", (i as f64 / max_character as f64) * 100.0);
             stdout().flush().unwrap();
         }
     }
