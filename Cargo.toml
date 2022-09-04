@@ -8,3 +8,8 @@ edition = "2021"
 [dependencies]
 clap = { version = "3.2.20", features = ["derive"] }
 zip = "0.6.2"
+
+[package]
+description = "A utility that generates a binary delta of two files and allows you to apply it on the source."
+readme = "README.md"
+repository = "https://github.com/manorajesh/bDelta"
