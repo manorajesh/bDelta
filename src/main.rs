@@ -1,4 +1,6 @@
-use std::{fs::{OpenOptions, File}, io::{self, Read, Write}};
+use std::{fs::{remove_file, rename, OpenOptions, File}, io::{stdin, Read, Write}, path::Path, process::exit};
+use clap::{Parser, Subcommand};
+use zip::{ZipArchive, ZipWriter};
 
 /* 
  First, identify and record the differing bytes between the source and
@@ -8,14 +10,84 @@ use std::{fs::{OpenOptions, File}, io::{self, Read, Write}};
  Finally, rename the temporary file to the new file.
  */
 
-fn main() {
-    let source = "src/source.bin";
-    let new = "src/new.bin";
-    
-    let diff = diff(source, new);
-    println!("{:?}", diff);
+#[derive(Parser)]
+#[clap(version = "0.1", author = "Mano Rajesh")]
+/// Generate or apply a binary patch to a file (binary delta)
+struct Cli {
+    #[clap(subcommand)]
+    subcmd: SubCommands,
+}
 
-    apply(diff, source, true, new);
+#[derive(Subcommand)]
+enum SubCommands {
+    /// Apply a binary patch to a file
+    Apply {
+        #[clap(value_name = "SOURCE")]
+        source: String,
+
+        #[clap(value_name = "DIFF")]
+        diff: String,
+
+        #[clap(short, long)]
+        request: bool,
+        
+        #[clap(short, long = "delete-diff", action)]
+        delete: bool,
+    },
+    /// Generate a binary patch from a source and new file
+    Generate {
+        #[clap(value_name = "SOURCE")]
+        source: String,
+
+        #[clap(value_name = "NEW")]
+        new: String,
+
+        #[clap(short, long, default_value = "diff.zip")]
+        output: String,
+
+        #[clap(short, long, action)]
+        print_stdout: bool,
+    },
+}
+
+fn main() {
+    let cli = Cli::parse();
+
+    match cli.subcmd {
+        SubCommands::Apply { source, diff , request, delete} => {
+            let source = if Path::new(&source).exists() {&source[..]} else {
+                eprintln!("Source file does not exist");
+                exit(1);
+            };
+
+            let diff_file = if Path::new(&diff).exists() {&diff[..]} else {
+                eprintln!("New file does not exist");
+                exit(1);
+            };
+
+            let diff = deserialize(diff_file);
+
+            apply(diff, source, request);
+
+            if delete {
+                remove_file(diff_file).expect("Failed to delete diff file");
+                println!("Deleted diff file");
+            }
+        }
+        SubCommands::Generate { source, new , output, print_stdout} => {
+            let source = if Path::new(&source).exists() {&source[..]} else {
+                eprintln!("Source file does not exist");
+                exit(1);
+            };
+
+            let new = if Path::new(&new).exists() {&new[..]} else {
+                eprintln!("New file does not exist");
+                exit(1);
+            };
+
+            serialize(diff(source, new), output, print_stdout); // Add diff to zipped file
+        }
+    }
 }
 
 fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
@@ -41,8 +113,7 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
         }
         i += 1;
     }
-
-    if (new_len - diff.len() as u64) > source_len {
+    if new_len > source_len {
         while i < new_len.into() {
             diff.push((i, buffer2[0], false));
             new.read(&mut buffer2).expect("Unable to read file"); // already read the byte in loop
@@ -55,16 +126,15 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
     if diff != Vec::new() { // If there are no differences, return an empty vector
         diff.insert(0, (i, 0, false)); // Add length of new file to the beginning of the diff
     }
+
+    println!("Number of character differences: {}", diff.len() - 1); // -1 because placeholder start element is included
     diff
 }
 
-fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, verify: bool, new: &str) {
+fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool) {
     if diff_bytes == Vec::new() {
         println!("No differences found");
         return;
-    }
-    if !verify {
-        drop(new); // Drop the new file if automatic verification is disabled
     }
 
     let buffer_file = String::from(target) + ".buffer";
@@ -103,35 +173,25 @@ fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, verify: bool, new: &str
         }
     }
 
-    if verify {
-        if diff(&buffer_file[..], new) == Vec::new() {
-            std::fs::remove_file(target).expect("Unable to remove file");
-            std::fs::rename(buffer_file, target).expect("Unable to rename file");
-            println!("Verification successful");
-            println!("Successfully applied patch at {}", target);
-        } else {
-            println!("Verification failed, removing buffer file");
-            //std::fs::remove_file(&buffer_file).expect("Unable to remove file");
-        }
-    } else {
+    if request {
         let mut usr_input = String::new();
 
         loop {
-            println!("Verification is disabled. Do you want to apply buffer? (y/n)");
+            println!("Do you want to apply buffer? (y/n)");
 
-            io::stdin()
+            stdin()
                 .read_line(&mut usr_input)
                 .expect("Unable to read input");
 
             match usr_input.trim() {
                 "y" => {
-                    std::fs::remove_file(target).expect("Unable to remove file");
-                    std::fs::rename(buffer_file, target).expect("Unable to rename file");
+                    remove_file(target).expect("Unable to remove file");
+                    rename(buffer_file, target).expect("Unable to rename file");
                     println!("{} file updated", target);
                     break;
                 },
                 "n" => {
-                    std::fs::remove_file(&buffer_file).expect("Unable to remove file");
+                    remove_file(&buffer_file).expect("Unable to remove file");
                     println!("{} file removed", buffer_file);
                     break;
                 },
@@ -141,6 +201,66 @@ fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, verify: bool, new: &str
                 }
             }
         }
-
+    } else {
+        remove_file(target).expect("Unable to remove file");
+        rename(buffer_file, target).expect("Unable to rename file");
+        println!("Successfully applied patch at {}", target);
     }
+}
+
+fn serialize(diff: Vec<(u64, u8, bool)>, output_name: String, print_stdout: bool) {
+    if diff == Vec::new() {
+        println!("No differences found");
+    }
+
+    if print_stdout {
+        for (i, byte, flag) in diff {
+            println!("{},{},{}", i, byte, flag);
+        }
+        return;
+    }
+
+    let output = File::create(output_name).expect("Unable to create file");
+    
+    let mut zip = ZipWriter::new(output);
+
+    zip.start_file("diff", Default::default()).expect("Unable to write to file");
+    for (i, byte, flag) in diff {
+        write!(zip, "{},{},{}\n", i, byte, flag).expect("Unable to write to file");
+    }
+}
+
+fn deserialize(zipped: &str) -> Vec<(u64, u8, bool)> {
+    // Open the file
+    let output = File::open(zipped).expect("Unable to open file");
+
+    // Attempt to unzip the file
+    let contents = match ZipArchive::new(output) {
+        Ok(mut archive) => {
+            let mut output = archive.by_index(0).expect("Unable to read zip file");
+
+            // Read the file
+            let mut contents = String::new();
+            output.read_to_string(&mut contents).expect("Unable to read zip file");
+            contents
+        },
+        Err(_) => {
+            // If the file is not a zip file, read it as a normal file
+            let mut contents = String::new();
+            let mut text = File::open(zipped).expect("Unable to open file");
+            text.read_to_string(&mut contents).expect("Unable to read file");
+            contents
+        }
+    };
+
+    let mut diff = Vec::new();
+
+    for line in contents.lines() {
+        let mut split = line.split(',');
+        let i = split.next().unwrap().parse::<u64>().unwrap();
+        let byte = split.next().unwrap().parse::<u8>().unwrap();
+        let flag = split.next().unwrap().parse::<bool>().unwrap();
+        diff.push((i, byte, flag));
+    }
+    diff
 }
