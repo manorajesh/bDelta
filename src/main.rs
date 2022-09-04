@@ -1,4 +1,4 @@
-use std::{fs::{remove_file, rename, OpenOptions, File}, io::{stdin, Read, Write}, path::Path, process::exit};
+use std::{fs::{remove_file, rename, OpenOptions, File}, io::{stdout, stdin, Read, Write}, path::Path, process::exit};
 use clap::{Parser, Subcommand};
 use zip::{ZipArchive, ZipWriter};
 
@@ -8,6 +8,11 @@ use zip::{ZipArchive, ZipWriter};
  Then, create a new temporary file and copy the source file with the 
  differing bytes at the correct locations as well.
  Finally, rename the temporary file to the new file.
+ */
+
+ /*
+  Preformace Hogs:
+  - memcpy when applying large update
  */
 
 #[derive(Parser)]
@@ -100,6 +105,8 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
     let source_len = source.metadata().unwrap().len();
     let new_len = new.metadata().unwrap().len();
     let mut diff = Vec::new();
+
+    println!("Finding diffs...");
     
     let mut i: u64 = 0;
     loop {
@@ -126,8 +133,6 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
     if diff != Vec::new() { // If there are no differences, return an empty vector
         diff.insert(0, (i, 0, false)); // Add length of new file to the beginning of the diff
     }
-
-    println!("Number of character differences: {}", diff.len() - 1); // -1 because placeholder start element is included
     diff
 }
 
@@ -157,6 +162,8 @@ fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool) {
     let mut buffer = [0; 1];
     let max_character = diff_bytes[0].0;
     diff_bytes.remove(0);
+
+    println!("Applying patch...");
     
     let mut i: u64 = 0;
     while i < max_character {
@@ -170,6 +177,11 @@ fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool) {
             tfile.read(&mut buffer).expect("Unable to read file");
             bfile.write(&buffer).expect("Unable to write to file");
             i += 1;
+        }
+
+        if i % 100 == 0 {
+            print!("\r{:.2}%", (i as f64 / max_character as f64) * 100.0);
+            stdout().flush().unwrap();
         }
     }
 
@@ -211,11 +223,13 @@ fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool) {
 fn serialize(diff: Vec<(u64, u8, bool)>, output_name: String, print_stdout: bool) {
     if diff == Vec::new() {
         println!("No differences found");
+    } else {
+        println!("Number of character differences: {}", diff.len() - 1); // -1 because placeholder start element is included
     }
 
     if print_stdout {
         for (i, byte, flag) in diff {
-            println!("{},{},{}", i, byte, flag);
+            println!("{:x},{:x},{}", i, byte, flag as u8);
         }
         return;
     }
@@ -226,7 +240,7 @@ fn serialize(diff: Vec<(u64, u8, bool)>, output_name: String, print_stdout: bool
 
     zip.start_file("diff", Default::default()).expect("Unable to write to file");
     for (i, byte, flag) in diff {
-        write!(zip, "{},{},{}\n", i, byte, flag).expect("Unable to write to file");
+        write!(zip, "{:x},{:x},{}\n", i, byte, flag as u8).expect("Unable to write to file");
     }
 }
 
@@ -257,9 +271,9 @@ fn deserialize(zipped: &str) -> Vec<(u64, u8, bool)> {
 
     for line in contents.lines() {
         let mut split = line.split(',');
-        let i = split.next().unwrap().parse::<u64>().unwrap();
-        let byte = split.next().unwrap().parse::<u8>().unwrap();
-        let flag = split.next().unwrap().parse::<bool>().unwrap();
+        let i = u64::from_str_radix(split.next().unwrap(), 16).unwrap();
+        let byte = u8::from_str_radix(split.next().unwrap(), 16).unwrap();
+        let flag = split.next().unwrap().parse::<u8>().unwrap() == 1;
         diff.push((i, byte, flag));
     }
     diff
