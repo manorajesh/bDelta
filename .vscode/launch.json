@@ -7,34 +7,35 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'delta'",
+            "name": "Debug executable 'bdel'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=delta",
-                    "--package=delta"
+                    "--bin=bdel",
+                    "--package=bdel"
                 ],
                 "filter": {
-                    "name": "delta",
+                    "name": "bdel",
                     "kind": "bin"
                 }
             },
-            "args": ["apply", "src/source.bin", "src/diff.txt"],
+            //"args": ["apply", "src/source.bin", "src/diff.zip"],
+            "args": ["generate", "src/source.bin", "src/new.bin"],
             "cwd": "${workspaceFolder}"
         },
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'delta'",
+            "name": "Debug unit tests in executable 'bdel'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=delta",
-                    "--package=delta"
+                    "--bin=bdel",
+                    "--package=bdel"
                 ],
                 "filter": {
-                    "name": "delta",
+                    "name": "bdel",
                     "kind": "bin"
                 }
             },

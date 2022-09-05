@@ -1,1 +1,10 @@
 /target
+
+# for any test binaries
+src/*.bin
+
+# for zip diff file
+src/*.zip
+
+# for the temp buffer file
+src/*.buffer

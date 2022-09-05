@@ -23,7 +23,7 @@ Finally, rename the temporary file to the new file.
 // 2. Issue with context not being applied correctly
 
 #[derive(Parser)]
-#[clap(version = "0.1", author = "Mano Rajesh")]
+#[clap(version = "0.2.1", author = "Mano Rajesh")]
 /// Generate or apply a binary patch to a file (binary delta)
 struct Cli {
     #[clap(subcommand)]
@@ -40,7 +40,7 @@ enum SubCommands {
         #[clap(value_name = "DIFF")]
         diff: String,
 
-        #[clap(short, long)]
+        #[clap(short, long, action)]
         request: bool,
 
         #[clap(short, long = "dont-delete-diff", action, default_value = "false")]

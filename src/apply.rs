@@ -221,8 +221,8 @@ pub fn deserialize(zipped: &str) -> (Vec<(u64, u8, bool)>, String) {
 
     for line in contents.lines() {
         let mut split = line.split(',');
-        let i = u64::from_str_radix(split.next().unwrap(), 16).unwrap();
-        let byte = u8::from_str_radix(split.next().unwrap(), 16).unwrap();
+        let i = u64::from_str_radix(split.next().unwrap(), 16).expect("Check if diff file is correct");
+        let byte = u8::from_str_radix(split.next().unwrap(), 16).expect("Check if diff file is correct");
         let flag = split.next().unwrap().parse::<u8>().unwrap() == 1;
         diff.push((i, byte, flag));
     }
