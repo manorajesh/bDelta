@@ -10,10 +10,8 @@ use zip::{ZipArchive, ZipWriter};
  Finally, rename the temporary file to the new file.
  */
 
- /*
-  Preformace Hogs:
-  - memcpy when applying large update
- */
+ // TODO
+    // 1. Add hashing to the diff to check if they are the same when applied
 
 #[derive(Parser)]
 #[clap(version = "0.1", author = "Mano Rajesh")]
@@ -54,6 +52,8 @@ enum SubCommands {
         print_stdout: bool,
     },
 }
+
+const CHUNK_SIZE: u64 = 1024;
 
 fn main() {
     let cli = Cli::parse();
@@ -99,8 +99,6 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
     let mut source = File::open(file1).expect("Unable to read file");
     let mut new = File::open(file2).expect("Unable to read file");
 
-    const CHUNK_SIZE: u64 = 1024;
-
     let mut buffer1 = [0; CHUNK_SIZE as usize];
     let mut buffer2 = [0; CHUNK_SIZE as usize];
 
@@ -135,10 +133,14 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
     }
     
     if new_len > source_len {
-        while j < max_character as usize {
-            diff.push((i + j as u64, buffer2[j], false));
-            i += 1;
-            j += 1;
+        loop {
+            let mut g = 0;
+            while g < CHUNK_SIZE as usize {
+                diff.push((j as u64, buffer2[g], false));
+                g += 1;
+                j += 1;
+            }
+            if new.read(&mut buffer2).expect("Unable to read file") == 0 {break}
         }
     } else if new_len < source_len {
         diff.push((new_len, 0, true));
@@ -173,32 +175,39 @@ fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool) {
                             .open(target)
                             .expect("Unable to open file");
 
-    let mut buffer = [0; 1];
+    let mut buffer = [0; CHUNK_SIZE as usize];
     let max_character = diff_bytes[0].0;
     diff_bytes.remove(0);
 
     println!("Applying patch...");
     
-    diff_bytes.push((0, 0, true)); // Add a dummy value to the end of the vector to prevent out of bounds error
     let mut i: u64 = 0;
-    while i < max_character {
-        if diff_bytes[0].2 && i == max_character {
-            break
-        } else if diff_bytes[0].0 == i {
-            bfile.write(&[diff_bytes[0].1]).expect("Unable to write to file");
-            diff_bytes.remove(0);
-            i += 1;
-        } else {
-            tfile.read(&mut buffer).expect("Unable to read file");
-            bfile.write(&buffer).expect("Unable to write to file");
-            i += 1;
-        }
+    
+    diff_bytes.push((0, 0, true)); // Add a dummy value to the end of the vector to prevent out of bounds error
+    'bufupdate: loop {
+        if tfile.read(&mut buffer).expect("Unable to read file") == 0 && i == max_character {break} // break when EOF
 
-        if i % 100 == 0 {
-            print!("\r{:.1}%", (i as f64 / max_character as f64) * 100.0);
-            stdout().flush().unwrap();
+        let mut g = 0;
+        while i < max_character && g < CHUNK_SIZE {
+            if diff_bytes[0].2 {
+                break 'bufupdate;
+            } else if diff_bytes[0].0 == i {
+                bfile.write(&[diff_bytes[0].1]).expect("Unable to write to file");
+                diff_bytes.remove(0);
+                i += 1;
+                g += 1;
+            } else {
+                bfile.write(&[buffer[i as usize]]).expect("Unable to write to file");
+                i += 1;
+                g += 1;
+            }
+            if i % 100 == 0 {
+                print!("\r{:.1}%", (i as f64 / max_character as f64) * 100.0);
+                stdout().flush().unwrap();
+            }
         }
     }
+
     println!("\r100.0%");
 
     if request {
