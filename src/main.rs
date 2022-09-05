@@ -1,7 +1,7 @@
 use std::{fs::{remove_file, rename, OpenOptions, File}, io::{stdout, stdin, Read, Write}, path::Path, process::exit};
 use clap::{Parser, Subcommand};
 use zip::{ZipArchive, ZipWriter};
-
+use blake3::Hasher;
 /* 
  First, identify and record the differing bytes between the source and
  the new file
@@ -11,7 +11,8 @@ use zip::{ZipArchive, ZipWriter};
  */
 
  // TODO
-    // 1. Add hashing to the diff to check if they are the same when applied
+    // 1. Add hashing to the diff to check if they are the same when applied DONE
+    // 2. Issue with context not being applied correctly
 
 #[derive(Parser)]
 #[clap(version = "0.1", author = "Mano Rajesh")]
@@ -34,7 +35,7 @@ enum SubCommands {
         #[clap(short, long)]
         request: bool,
         
-        #[clap(short, long = "delete-diff", action, default_value = "true")]
+        #[clap(short, long = "dont-delete-diff", action, default_value = "false")]
         delete: bool,
     },
     /// Generate a binary patch from a source and new file
@@ -53,13 +54,13 @@ enum SubCommands {
     },
 }
 
-const CHUNK_SIZE: u64 = 1024;
+const CHUNK_SIZE: u64 = 256;
 
 fn main() {
     let cli = Cli::parse();
 
     match cli.subcmd {
-        SubCommands::Apply { source, diff , request, delete} => {
+        SubCommands::Apply { source, diff , request, mut delete} => {
             let source = if Path::new(&source).exists() {&source[..]} else {
                 eprintln!("Source file does not exist");
                 exit(1);
@@ -72,9 +73,11 @@ fn main() {
 
             let diff = deserialize(diff_file);
 
-            apply(diff, source, request);
+            if !apply(diff.0, source, request, diff.1) {
+                delete = true;
+            }
 
-            if delete {
+            if !delete { // for readability - if 'dont-delete' is false
                 remove_file(diff_file).expect("Failed to delete diff file");
                 println!("Deleted diff file");
             }
@@ -90,7 +93,7 @@ fn main() {
                 exit(1);
             };
 
-            serialize(diff(source, new), output, print_stdout); // Add diff to zipped file
+            serialize(diff(source, new), output, print_stdout, new); // Add diff to zipped file
         }
     }
 }
@@ -119,8 +122,9 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
 
         if buffer1 != buffer2 {
             while i < max_character as u64 && j < max_character as usize {
-                if buffer1[i as usize] != buffer2[j] {
+                if buffer1[i as usize] != buffer2[j] || buffer1[i as usize + 2] != buffer2[j + 2] {
                     diff.push((j as u64, buffer2[j], false));
+                    println!("{:?} at {}", buffer2[j] as char, j);
                     j += 1;
                 } else {
                     i += 1;
@@ -133,14 +137,16 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
     }
     
     if new_len > source_len {
+        let mut g = j;
         loop {
-            let mut g = 0;
-            while g < CHUNK_SIZE as usize {
+            while g < CHUNK_SIZE as usize && j < new_len as usize {
                 diff.push((j as u64, buffer2[g], false));
+                println!("{} at {}", buffer2[g] as char, j);
                 g += 1;
                 j += 1;
             }
             if new.read(&mut buffer2).expect("Unable to read file") == 0 {break}
+            g = 0;
         }
     } else if new_len < source_len {
         diff.push((new_len, 0, true));
@@ -152,10 +158,10 @@ fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
     diff
 }
 
-fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool) {
+fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool, hash: String) -> bool {
     if diff_bytes == Vec::new() {
         println!("No differences found");
-        return;
+        return true;
     }
 
     let buffer_file = String::from(target) + ".buffer";
@@ -222,9 +228,6 @@ fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool) {
 
             match usr_input.trim() {
                 "y" => {
-                    remove_file(target).expect("Unable to remove file");
-                    rename(buffer_file, target).expect("Unable to rename file");
-                    println!("{} file updated", target);
                     break;
                 },
                 "n" => {
@@ -239,13 +242,51 @@ fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool) {
             }
         }
     } else {
+        println!("\nVerifying hash...");
+        if hash != String::new() {
+            if compare_hash(&hash, &buffer_file[..]) {
+                println!("Verification successful\n");
+            } else {
+                println!("\nVerification failed; removing buffer file");
+                //remove_file(&buffer_file).expect("Unable to remove file");
+                println!("{} file removed", buffer_file);
+
+                println!("\nDouble check that the diff file is correct");
+                println!("Hash found in diff: {}", hash);
+                return false; // don't delete the zip file for debugging purposes
+            }
+        } else {
+            println!("No hash provided; Skipping...")
+        }
+
+        println!("Applying buffer...");
         remove_file(target).expect("Unable to remove file");
         rename(buffer_file, target).expect("Unable to rename file");
         println!("Successfully applied patch at {}", target);
     }
+    true // to delete the zip file
 }
 
-fn serialize(diff: Vec<(u64, u8, bool)>, output_name: String, print_stdout: bool) {
+fn compare_hash(hash1: &String, file: &str) -> bool {
+    let mut hasher = Hasher::new();
+    let mut file = File::open(file).expect("Unable to open file");
+    let mut buffer = [0; CHUNK_SIZE as usize];
+
+    loop {
+        if file.read(&mut buffer).expect("Unable to read file") == 0 {break} // break when EOF
+        hasher.update(&buffer);
+    }
+
+    let hash2 = format!("{}", hasher.finalize().to_hex());
+    
+    if *hash1 == hash2 {
+        true
+    } else {
+        false
+    }
+}
+
+fn serialize(diff: Vec<(u64, u8, bool)>, output_name: String, print_stdout: bool, new_file: &str) {
     if diff == Vec::new() {
         println!("No differences found");
     } else {
@@ -263,13 +304,33 @@ fn serialize(diff: Vec<(u64, u8, bool)>, output_name: String, print_stdout: bool
     
     let mut zip = ZipWriter::new(output);
 
+    println!("\nZipping patch...");
+
     zip.start_file("diff", Default::default()).expect("Unable to write to file");
     for (i, byte, flag) in diff {
         write!(zip, "{:x},{:x},{}\n", i, byte, flag as u8).expect("Unable to write to file");
     }
+
+    println!("\nGenerating hash...");
+    
+    // Genreate blake3 hash for new file and write to zip
+    let mut hasher = Hasher::new();
+    let mut new_file = File::open(new_file).expect("Unable to open file");
+    let mut buffer = [0; CHUNK_SIZE as usize];
+    loop {
+        if new_file.read(&mut buffer).expect("Unable to read file") == 0 {break} // break when EOF
+        hasher.update(&buffer);
+    }
+
+    let hash = hasher.finalize();
+
+    zip.start_file("hash", Default::default()).expect("Unable to write to file");
+
+    println!("Hash: {}", hash.to_hex());
+    write!(zip, "{}", hash.to_hex()).expect("Unable to write to file");
 }
 
-fn deserialize(zipped: &str) -> Vec<(u64, u8, bool)> {
+fn deserialize(zipped: &str) -> (Vec<(u64, u8, bool)>, String) {
     // Open the file
     let output = File::open(zipped).expect("Unable to open file");
 
@@ -292,6 +353,46 @@ fn deserialize(zipped: &str) -> Vec<(u64, u8, bool)> {
         }
     };
 
+    let hash = match ZipArchive::new(File::open(zipped).expect("Unable to open file")) {
+        Ok(mut archive) => {
+            let mut output = archive.by_index(1).expect("Unable to read zip file");
+
+            // Read the file
+            let mut contents = String::new();
+            output.read_to_string(&mut contents).expect("Unable to read zip file");
+            contents
+        },
+        Err(_) => {
+            String::new()
+        }
+    };
+
+    if hash == String::new() {
+        loop {
+            println!("No hash found in diff file; do you want to continue? (y/n)");
+
+            let mut usr_input = String::new();
+
+            stdin()
+                .read_line(&mut usr_input)
+                .expect("Unable to read input");
+
+            match usr_input.trim() {
+                "y" => {
+                    break;
+                },
+                "n" => {
+                    println!("Exiting...");
+                    exit(0);
+                },
+                _ => {
+                    println!("Invalid input");
+                }
+            }
+        }
+    }
+
+
     let mut diff = Vec::new();
 
     for line in contents.lines() {
@@ -301,5 +402,5 @@ fn deserialize(zipped: &str) -> Vec<(u64, u8, bool)> {
         let flag = split.next().unwrap().parse::<u8>().unwrap() == 1;
         diff.push((i, byte, flag));
     }
-    diff
+    (diff, hash)
 }
