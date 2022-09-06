@@ -47,7 +47,7 @@ enum SubCommands {
         delete: bool,
     },
     /// Generate a binary patch from a source and new file
-    Generate {
+    Gen {
         #[clap(value_name = "SOURCE")]
         source: String,
 
@@ -100,7 +100,7 @@ fn main() {
                 println!("Deleted diff file");
             }
         }
-        SubCommands::Generate {
+        SubCommands::Gen {
             source,
             new,
             output,

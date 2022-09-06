@@ -39,9 +39,11 @@ pub fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
             break;
         }
 
+        let mut diff_found = false; // tracking if a common pattern was found
+
         if buffer1 != buffer2 {
             while i < max_character as u64 && j < max_character as usize {
-                if buffer1[i as usize] != buffer2[j] || buffer1[i as usize + 2] != buffer2[j + 2] {
+                if buffer1[i as usize] != buffer2[j] {
                     diff.push((j as u64, buffer2[j], false));
 //                    println!("{:?} at {}", buffer2[j] as char, j);
                     j += 1;
@@ -57,16 +59,14 @@ pub fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
 
     if new_len > source_len {
         let mut g = j;
-        loop {
+        while j < new_len as usize {
             while g < CHUNK_SIZE as usize && j < new_len as usize {
                 diff.push((j as u64, buffer2[g], false));
 //                println!("{} at {}", buffer2[g] as char, j);
                 g += 1;
                 j += 1;
             }
-            if new.read(&mut buffer2).expect("Unable to read file") == 0 {
-                break;
-            }
+            new.read(&mut buffer2).expect("Unable to read file");
             g = 0;
         }
     } else if new_len < source_len {

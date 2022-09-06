@@ -20,7 +20,7 @@
                 }
             },
             //"args": ["apply", "src/source.bin", "src/diff.zip"],
-            "args": ["generate", "src/source.bin", "src/new.bin"],
+            "args": ["gen", "src/source.bin", "src/new.bin"],
             "cwd": "${workspaceFolder}"
         },
         {
