@@ -62,7 +62,7 @@ enum SubCommands {
     },
 }
 
-pub const CHUNK_SIZE: u64 = 256;
+pub const CHUNK_SIZE: u64 = 32;
 
 fn main() {
     let cli = Cli::parse();

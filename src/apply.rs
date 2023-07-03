@@ -108,7 +108,7 @@ pub fn apply(diff_bytes: Vec<(u64, u8, bool)>, target: &str, request: bool, hash
                 println!("Verification successful\n");
             } else {
                 println!("\nVerification failed; removing buffer file");
-                remove_file(&buffer_file).expect("Unable to remove file");
+//                remove_file(&buffer_file).expect("Unable to remove file");
                 println!("{} file removed", buffer_file);
 
                 println!("\nDouble check that the diff file is correct");

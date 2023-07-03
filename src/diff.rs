@@ -9,6 +9,24 @@ use crate::CHUNK_SIZE;
 
 // Generate a diff from a source and new file
 
+fn lcs(pattern1: [u8; CHUNK_SIZE as usize], pattern2: [u8; CHUNK_SIZE as usize], len1: usize, len2: usize) -> Vec<(u64, u8, bool)> {
+    if len1 == 0 || len2 == 0 {
+        return Vec::new();
+    } else if pattern1[len1-1] == pattern2[len2-1] {
+        let mut lcs = lcs(pattern1, pattern2, len1-1, len2-1);
+        lcs.push((len1 as u64, pattern1[len1-1], false));
+        return lcs;
+    } else {
+        let lcs1 = lcs(pattern1, pattern2, len1-1, len2);
+        let lcs2 = lcs(pattern1, pattern2, len1, len2-1);
+        if lcs1.len() > lcs2.len() {
+            return lcs1;
+        } else {
+            return lcs2;
+        }
+    }
+}
+    
 pub fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
     let mut source = File::open(file1).expect("Unable to read file");
     let mut new = File::open(file2).expect("Unable to read file");
@@ -39,19 +57,8 @@ pub fn diff(file1: &str, file2: &str) -> Vec<(u64, u8, bool)> {
             break;
         }
 
-        let mut diff_found = false; // tracking if a common pattern was found
-
         if buffer1 != buffer2 {
-            while i < max_character as u64 && j < max_character as usize {
-                if buffer1[i as usize] != buffer2[j] {
-                    diff.push((j as u64, buffer2[j], false));
-//                    println!("{:?} at {}", buffer2[j] as char, j);
-                    j += 1;
-                } else {
-                    i += 1;
-                    j += 1;
-                }
-            }
+            diff.append(&mut lcs(buffer1, buffer2, buffer1.len(), buffer2.len()));
         } else {
             i += CHUNK_SIZE;
         }
